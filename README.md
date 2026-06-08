@@ -3,7 +3,7 @@
 > ITS Corso Big Data — Esercitazione di coppia  
 > Pipeline IoT in tempo reale: generazione, trasmissione e analisi di telemetria industriale
 
-**Stack:** Python · Apache Kafka · MongoDB · kafka-python · pymongo · Faker
+**Stack:** Python · Apache Kafka · MongoDB · Docker · kafka-python · pymongo · Faker
 
 ---
 
@@ -31,8 +31,12 @@ Esercitazione_SmartFactory_IoT_BigData/
 │   └── consumer.py              ← Parte B: Stream Processor / Consumer
 │
 ├── docs/
-│   └── architecture.svg         ← diagramma dell'architettura
+│   ├── architecture.svg         ← diagramma dell'architettura
+│   └── business_questions.md   ← analisi e risposte alle 12 domande di business
 │
+├── Dockerfile                   ← immagine Python condivisa da producer e consumer
+├── docker-compose.yml           ← stack completo: Kafka, MongoDB, producer, consumer
+├── .dockerignore
 ├── .env.example                 ← template variabili d'ambiente
 ├── requirements.txt
 └── README.md
@@ -105,7 +109,7 @@ Ogni messaggio Kafka rispetta questo schema. **Nessuna modifica senza accordo tr
 
 ## MongoDB
 
-Database: `smart_factory`
+Database: `zozzolotto_breda`
 
 | Collection | Owner | Contenuto |
 |---|---|---|
@@ -116,14 +120,32 @@ Database: `smart_factory`
 
 ---
 
-## Setup
+## Setup con Docker (consigliato)
 
-**Prerequisiti:** Python 3.10+ · Apache Kafka · MongoDB (forniti dal laboratorio)
+**Prerequisiti:** Docker Desktop installato e in esecuzione.
 
 ```bash
 git clone https://github.com/zozzy04/Esercitazione_SmartFactory_IoT_BigData.git
 cd Esercitazione_SmartFactory_IoT_BigData
 
+docker compose up
+```
+
+Docker avvia in ordine automatico: Kafka → MongoDB → kafka-init (crea i 4 topic) → Consumer + Producer in parallelo.  
+MongoDB persiste i dati su volume anche dopo `docker compose down`.
+
+Per fermare tutto:
+```bash
+docker compose down
+```
+
+---
+
+## Setup manuale (alternativo)
+
+**Prerequisiti:** Python 3.10+ · Apache Kafka · MongoDB
+
+```bash
 pip install -r requirements.txt
 
 cp .env.example .env
@@ -134,34 +156,30 @@ cp .env.example .env
 ```env
 KAFKA_BOOTSTRAP_SERVERS=localhost:9092
 MONGO_URI=mongodb://localhost:27017
-MONGO_DB=smart_factory
+MONGO_DB=zozzolotto_breda
 TOTAL_RECORDS=1000000
 BATCH_SIZE=500
 ```
 
----
-
-## Esecuzione
-
 Avviare i due applicativi in parallelo, ciascuno nel proprio terminale.
 
-**Terminale 1 — Producer (Parte A):**
-```bash
-python producer/producer.py
-```
-
-**Terminale 2 — Consumer (Parte B):**
+**Terminale 1 — Consumer (Parte B):**
 ```bash
 python consumer/consumer.py
 ```
 
+**Terminale 2 — Producer (Parte A):**
+```bash
+python producer/producer.py
+```
+
 Output atteso dal Producer:
 ```
-Producer starting — 1,000,000 records, batch=500
-[    10,000]      85,432 rec/s
-[    20,000]      87,210 rec/s
+Producer avviato — 1,000,000 record, batch=500
+[    10,000]      27,432 rec/s
+[    20,000]      27,891 rec/s
 ...
-Done: 1,000,000 records in 11.7s — avg 85,470 rec/s
+Done: 1,000,000 record in 35.8s — media 27,932 rec/s
 ```
 
 ---
@@ -193,6 +211,7 @@ Al termine la coppia risponde interrogando MongoDB con l'aggregation framework.
 |---|---|
 | **Apache Kafka** | Message broker — disaccoppia Producer e Consumer |
 | **MongoDB** | Persistenza — staging (raw) e serving (elaborato) |
+| **Docker** | Containerizzazione e orchestrazione dell'intero stack |
 | **kafka-python** | Client Kafka per Python |
 | **pymongo** | Client MongoDB per Python |
 | **Faker** | Generazione dati sintetici realistici |
