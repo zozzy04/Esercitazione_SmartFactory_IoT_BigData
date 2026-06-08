@@ -7,38 +7,7 @@ Producer/Consumer su **Apache Kafka**, persistenza su **MongoDB**, sviluppato in
 
 ## Architettura
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        SMART FACTORY                                │
-│                                                                     │
-│  ┌──────────┐     ┌──────────┐     ┌─────────────────────────────┐ │
-│  │ Sensori  │     │          │     │       Apache Kafka           │ │
-│  │simulati  │────▶│Producer  │────▶│  iot.ambientale             │ │
-│  │          │     │(Parte A) │     │  iot.macchinari             │ │
-│  │ Faker +  │     │          │     │  iot.logistica              │ │
-│  │ random   │     │ Salva ▼  │     │  iot.qualita                │ │
-│  └──────────┘     └──────────┘     └────────────┬────────────────┘ │
-│                        │                        │                   │
-│                        ▼                        ▼                   │
-│               ┌─────────────────┐     ┌─────────────────┐         │
-│               │    MongoDB      │     │    Consumer      │         │
-│               │                 │     │    (Parte B)     │         │
-│               │ raw_telemetry   │     │                  │         │
-│               │  (staging)      │     │ valida, arricch. │         │
-│               └─────────────────┘     │ aggrega          │         │
-│                                       └────────┬─────────┘         │
-│                                                │                   │
-│                                                ▼                   │
-│                                   ┌─────────────────────────┐      │
-│                                   │        MongoDB          │      │
-│                                   │                         │      │
-│                                   │  processed_events       │      │
-│                                   │  alerts                 │      │
-│                                   │  aggregations           │      │
-│                                   │     (serving)           │      │
-│                                   └─────────────────────────┘      │
-└─────────────────────────────────────────────────────────────────────┘
-```
+![Pipeline Architecture](docs/architecture.svg)
 
 ---
 
