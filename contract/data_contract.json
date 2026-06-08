@@ -1,0 +1,76 @@
+{
+  "_comment": "Contratto dati condiviso tra Producer (A) e Consumer (B). Non modificare senza accordo di entrambi.",
+
+  "message_schema": {
+    "device_id":  { "type": "string",  "example": "MAC-014",              "required": true },
+    "ambito":     { "type": "string",  "enum": ["ambientale", "macchinari", "logistica", "qualita"], "required": true },
+    "timestamp":  { "type": "string",  "format": "ISO8601-UTC",           "example": "2026-06-08T09:30:00Z", "required": true },
+    "tipo":       { "type": "string",  "example": "temperatura_motore",   "required": true },
+    "valore":     { "type": "number",                                      "required": true },
+    "unita":      { "type": "string",  "example": "C",                    "required": true },
+    "reparto":    { "type": "string",  "example": "Assemblaggio",         "required": true },
+    "linea":      { "type": "string",  "example": "L2",                   "required": true }
+  },
+
+  "topics": {
+    "ambientale": "iot.ambientale",
+    "macchinari": "iot.macchinari",
+    "logistica":  "iot.logistica",
+    "qualita":    "iot.qualita"
+  },
+
+  "partition_key": "device_id",
+
+  "misure_per_ambito": {
+    "ambientale": [
+      { "tipo": "temperatura_ambientale", "unita": "C",   "range": [15, 45] },
+      { "tipo": "umidita",                "unita": "%",   "range": [20, 95] },
+      { "tipo": "co2",                    "unita": "ppm", "range": [300, 1500] }
+    ],
+    "macchinari": [
+      { "tipo": "temperatura_motore",     "unita": "C",    "range": [40, 110] },
+      { "tipo": "vibrazione",             "unita": "mm/s", "range": [0.1, 12.0] },
+      { "tipo": "rpm",                    "unita": "rpm",  "range": [500, 4000] },
+      { "tipo": "consumo_energetico",     "unita": "kWh",  "range": [10, 200] }
+    ],
+    "logistica": [
+      { "tipo": "posizione_lat",          "unita": "deg",  "range": [45.40, 45.50] },
+      { "tipo": "posizione_lon",          "unita": "deg",  "range": [9.10, 9.20] },
+      { "tipo": "rfid_lettura",           "unita": "count","range": [0, 1] }
+    ],
+    "qualita": [
+      { "tipo": "pezzi_prodotti",         "unita": "count","range": [0, 500] },
+      { "tipo": "scarti",                 "unita": "count","range": [0, 80] },
+      { "tipo": "esito_controllo",        "unita": "bool", "range": [0, 1] }
+    ]
+  },
+
+  "soglie_allarme": {
+    "temperatura_motore":     { "op": ">",  "valore": 85.0,  "unita": "C" },
+    "vibrazione":             { "op": ">",  "valore": 7.5,   "unita": "mm/s" },
+    "consumo_energetico":     { "op": ">",  "valore": 150.0, "unita": "kWh" },
+    "temperatura_ambientale": { "op": ">",  "valore": 40.0,  "unita": "C" },
+    "umidita":                { "op": ">",  "valore": 85.0,  "unita": "%" },
+    "co2":                    { "op": ">",  "valore": 1000,  "unita": "ppm" },
+    "rpm":                    { "op": ">",  "valore": 3500,  "unita": "rpm" },
+    "scarti":                 { "op": ">",  "valore": 50,    "unita": "count" }
+  },
+
+  "mongodb": {
+    "database": "smart_factory",
+    "collections": {
+      "raw_telemetry":    { "owner": "A", "desc": "Messaggi grezzi così come generati (staging)" },
+      "processed_events": { "owner": "B", "desc": "Messaggi validati e arricchiti (serving)" },
+      "alerts":           { "owner": "B", "desc": "Solo misure che superano la soglia di allarme" },
+      "aggregations":     { "owner": "B", "desc": "Aggregati a finestra temporale (media per macchina al minuto)" }
+    },
+    "indexes": [
+      { "collection": "raw_telemetry",    "fields": ["device_id", "timestamp"] },
+      { "collection": "processed_events", "fields": ["device_id", "timestamp"] },
+      { "collection": "alerts",           "fields": ["device_id", "timestamp"] },
+      { "collection": "aggregations",     "fields": ["device_id", "window_start"] }
+    ]
+  },
+
+  "consumer_group": "smart-factory-consumers"
+}
