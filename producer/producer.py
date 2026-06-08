@@ -3,7 +3,6 @@ import os
 import random
 import time
 from datetime import datetime, timezone
-from typing import Any
 
 from dotenv import load_dotenv
 from faker import Faker
@@ -14,7 +13,8 @@ load_dotenv()
 
 fake = Faker()
 
-MISURE: dict[str, list[dict[str, Any]]] = {
+# misure disponibili per ogni ambito, con range realistici
+MISURE = {
     "ambientale": [
         {"tipo": "temperatura_ambientale", "unita": "C",   "range": (15.0, 45.0)},
         {"tipo": "umidita",                "unita": "%",   "range": (20.0, 95.0)},
@@ -28,7 +28,7 @@ MISURE: dict[str, list[dict[str, Any]]] = {
     ],
     "logistica": [
         {"tipo": "posizione_lat", "unita": "deg",   "range": (45.40, 45.50)},
-        {"tipo": "posizione_lon", "unita": "deg",   "range": (9.10,  9.20)},
+        {"tipo": "posizione_lon", "unita": "deg",   "range": (9.10, 9.20)},
         {"tipo": "rfid_lettura",  "unita": "count", "range": (0, 1)},
     ],
     "qualita": [
@@ -38,7 +38,7 @@ MISURE: dict[str, list[dict[str, Any]]] = {
     ],
 }
 
-TOPICS: dict[str, str] = {
+TOPICS = {
     "ambientale": "iot.ambientale",
     "macchinari": "iot.macchinari",
     "logistica":  "iot.logistica",
@@ -46,12 +46,13 @@ TOPICS: dict[str, str] = {
 }
 
 REPARTI = ["Assemblaggio", "Verniciatura", "Magazzino", "Controllo Qualita", "Spedizione"]
-LINEE   = ["L1", "L2", "L3", "L4"]
+LINEE = ["L1", "L2", "L3", "L4"]
 
+# unità di misura che producono valori interi
 INTEGER_UNITS = {"count", "bool"}
 
 
-def load_config() -> dict[str, Any]:
+def load_config():
     return {
         "kafka_servers": os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"),
         "mongo_uri":     os.getenv("MONGO_URI", "mongodb://localhost:27017"),
@@ -61,10 +62,13 @@ def load_config() -> dict[str, Any]:
     }
 
 
-def build_device_pool(devices_per_ambito: int = 50) -> dict[str, list[dict]]:
-    """Pre-generate a stable pool of devices. Each device keeps a fixed reparto and linea."""
-    return {
-        ambito: [
+def build_device_pool(devices_per_ambito=50):
+    """Genera un pool fisso di dispositivi per ogni ambito.
+    Ogni device ha un reparto e una linea assegnati una volta sola,
+    come un sensore reale che non cambia posizione."""
+    pool = {}
+    for ambito in MISURE:
+        pool[ambito] = [
             {
                 "device_id": fake.mac_address().upper(),
                 "reparto":   random.choice(REPARTI),
@@ -72,14 +76,13 @@ def build_device_pool(devices_per_ambito: int = 50) -> dict[str, list[dict]]:
             }
             for _ in range(devices_per_ambito)
         ]
-        for ambito in MISURE
-    }
+    return pool
 
 
-def generate_message(device: dict, ambito: str, tipo_spec: dict[str, Any]) -> dict:
+def generate_message(device, ambito, tipo_spec):
     lo, hi = tipo_spec["range"]
     if tipo_spec["unita"] in INTEGER_UNITS:
-        valore: int | float = random.randint(int(lo), int(hi))
+        valore = random.randint(int(lo), int(hi))
     else:
         valore = round(random.uniform(lo, hi), 2)
     return {
@@ -94,7 +97,7 @@ def generate_message(device: dict, ambito: str, tipo_spec: dict[str, Any]) -> di
     }
 
 
-def run_producer(cfg: dict[str, Any]) -> None:
+def run_producer(cfg):
     try:
         kafka_producer = KafkaProducer(
             bootstrap_servers=cfg["kafka_servers"],
@@ -102,30 +105,31 @@ def run_producer(cfg: dict[str, Any]) -> None:
             key_serializer=lambda k: k.encode("utf-8"),
         )
     except Exception as e:
-        raise RuntimeError(f"Cannot connect to Kafka at {cfg['kafka_servers']}: {e}") from e
+        raise RuntimeError(f"Connessione a Kafka fallita ({cfg['kafka_servers']}): {e}") from e
 
     try:
         mongo_client = MongoClient(cfg["mongo_uri"], serverSelectionTimeoutMS=5000)
         mongo_client.server_info()
     except Exception as e:
-        raise RuntimeError(f"Cannot connect to MongoDB at {cfg['mongo_uri']}: {e}") from e
+        raise RuntimeError(f"Connessione a MongoDB fallita ({cfg['mongo_uri']}): {e}") from e
 
     collection = mongo_client[cfg["mongo_db"]]["raw_telemetry"]
     collection.create_index([("device_id", ASCENDING), ("timestamp", ASCENDING)])
 
     device_pool = build_device_pool()
-    ambiti      = list(MISURE.keys())
-    total       = cfg["total_records"]
-    batch_size  = cfg["batch_size"]
-    buffer: list[dict] = []
+    ambiti = list(MISURE.keys())
+    total = cfg["total_records"]
+    batch_size = cfg["batch_size"]
+    buffer = []
     start = time.perf_counter()
 
     for i in range(total):
-        ambito    = random.choice(ambiti)
+        ambito = random.choice(ambiti)
         tipo_spec = random.choice(MISURE[ambito])
-        device    = random.choice(device_pool[ambito])
-        msg       = generate_message(device, ambito, tipo_spec)
+        device = random.choice(device_pool[ambito])
+        msg = generate_message(device, ambito, tipo_spec)
 
+        # pubblica su Kafka usando device_id come chiave di partizione
         kafka_producer.send(TOPICS[ambito], key=msg["device_id"], value=msg)
         buffer.append(msg)
 
@@ -137,12 +141,13 @@ def run_producer(cfg: dict[str, Any]) -> None:
             elapsed = time.perf_counter() - start
             print(f"[{i + 1:>10,}]  {(i + 1) / elapsed:>10,.0f} rec/s")
 
+    # flush del buffer residuo
     if buffer:
         collection.insert_many(buffer, ordered=False)
 
     kafka_producer.flush()
     elapsed = time.perf_counter() - start
-    print(f"\nDone: {total:,} records in {elapsed:.1f}s — avg {total / elapsed:,.0f} rec/s")
+    print(f"\nDone: {total:,} record in {elapsed:.1f}s — media {total / elapsed:,.0f} rec/s")
 
     kafka_producer.close()
     mongo_client.close()
@@ -150,5 +155,5 @@ def run_producer(cfg: dict[str, Any]) -> None:
 
 if __name__ == "__main__":
     config = load_config()
-    print(f"Producer starting — {config['total_records']:,} records, batch={config['batch_size']}")
+    print(f"Producer avviato — {config['total_records']:,} record, batch={config['batch_size']}")
     run_producer(config)
